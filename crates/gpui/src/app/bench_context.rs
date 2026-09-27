@@ -503,7 +503,12 @@ impl<'a, 'measurement> BenchAppContext<'a, 'measurement> {
         benchmark_name: Option<&'static str>,
         bencher: &'a mut criterion::Bencher<'measurement>,
     ) -> Self {
-        Self::build(platform, benchmark_name, bencher, BenchReport::default())
+        Self::build(
+            platform,
+            benchmark_name,
+            Some(bencher),
+            BenchReport::default(),
+        )
     }
 
     /// Creates a new benchmark app context backed by the provided platform.
@@ -518,13 +523,23 @@ impl<'a, 'measurement> BenchAppContext<'a, 'measurement> {
         bencher: &'a mut criterion::Bencher<'measurement>,
         report: BenchReport,
     ) -> Self {
-        Self::build(platform, benchmark_name, bencher, report)
+        Self::build(platform, benchmark_name, Some(bencher), report)
+    }
+
+    /// Creates a benchmark app context that is driven directly instead of by Criterion,
+    /// for benchmarks that count something other than time, such as allocations. The
+    /// measuring methods (`bench_iter`, `bench_renderer`, ...) panic on it.
+    ///
+    /// The platform's executors must be backed by a [`ThreadedDispatcher`]
+    /// (see [`bench_platform`]); panics otherwise.
+    pub fn unmeasured(platform: Rc<dyn Platform>, benchmark_name: Option<&'static str>) -> Self {
+        Self::build(platform, benchmark_name, None, BenchReport::default())
     }
 
     fn build(
         platform: Rc<dyn Platform>,
         benchmark_name: Option<&'static str>,
-        bencher: &'a mut criterion::Bencher<'measurement>,
+        bencher: Option<&'a mut criterion::Bencher<'measurement>>,
         report: BenchReport,
     ) -> Self {
         let background_executor = platform.background_executor();
@@ -549,7 +564,7 @@ impl<'a, 'measurement> BenchAppContext<'a, 'measurement> {
             background_executor,
             foreground_executor,
             benchmark_name,
-            bencher: Rc::new(RefCell::new(Some(bencher))),
+            bencher: Rc::new(RefCell::new(bencher)),
             report,
         }
     }
@@ -1011,7 +1026,10 @@ impl<'a, 'measurement> BenchAppContext<'a, 'measurement> {
 
     fn take_bencher(&self, benchmark_kind: &str) -> &'a mut criterion::Bencher<'measurement> {
         self.bencher.borrow_mut().take().unwrap_or_else(|| {
-            panic!("cannot start {benchmark_kind}: benchmark measurement is already running")
+            panic!(
+                "cannot start {benchmark_kind}: benchmark measurement is already running, \
+                 or the context is unmeasured"
+            )
         })
     }
 
